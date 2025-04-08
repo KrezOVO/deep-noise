@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 class NonLinear(nn.Module):
-    def __init__(self, in_nc=3, nc=1600, out_nc=1, num_sheets=4):
+    def __init__(self, in_nc=6, nc=1600, out_nc=1, num_sheets=4):
         super(NonLinear, self).__init__()
 
         self.hidden = nn.Linear(in_nc, nc)
@@ -97,13 +97,13 @@ class NonLinearTypeBinModel(nn.Module):
         return output
 
 class NonLinearBinModel(nn.Module):
-    def __init__(self, in_nc=3, nc=1600, num_bins=51, num_sheets=4):
+    def __init__(self, in_nc=6, nc=1600, num_bins=26, num_sheets=4):
         super(NonLinearBinModel, self).__init__()
         self.num_bins = num_bins
         self.num_sheets = num_sheets
         self.hidden = nn.Linear(in_nc, nc)
         self.relu = nn.LeakyReLU()
-        self.out = nn.Linear(nc, num_sheets * num_bins) 
+        self.out = nn.Linear(nc, num_sheets * num_bins)
 
     def forward(self, inp):
         x = self.relu(self.hidden(inp))
@@ -114,6 +114,38 @@ class NonLinearBinModel(nn.Module):
 class NonLinearTypeModel(nn.Module):
     def __init__(self, in_nc=3, nc=1600, out_nc=18, num_sheets=4):
         super(NonLinearTypeModel, self).__init__()
+        self.num_sheets = num_sheets
+        self.out_nc = out_nc
+        self.hidden = nn.Linear(in_nc, nc)
+        self.relu = nn.LeakyReLU()
+        self.out = nn.Linear(nc, out_nc * num_sheets)
+
+    def forward(self, inp):
+        x = self.relu(self.hidden(inp))
+        out = self.out(x)
+        output = out.view(-1, self.num_sheets, self.out_nc)
+        return output
+
+class NonLinearBowlBinMode(nn.Module):
+    def __init__(self, in_nc=6, nc=1600, out_nc=2, num_bins=26, num_sheets=4):
+        super(NonLinearBowlBinMode, self).__init__()
+        self.num_bins = num_bins
+        self.num_sheets = num_sheets
+        self.out_nc = out_nc
+        self.hidden = nn.Linear(in_nc, nc)
+        self.relu = nn.LeakyReLU()
+        self.out = nn.Linear(nc, out_nc * num_bins * num_sheets)
+
+    def forward(self, inp):
+        x = self.relu(self.hidden(inp))
+        out = self.out(x)
+        output = out.view(-1, self.num_sheets, self.out_nc, self.num_bins)
+        return output
+
+class NonLinearBowlMode(nn.Module):
+    def __init__(self, in_nc=6, nc=1600, out_nc=2, num_sheets=4):
+        super(NonLinearBowlMode, self).__init__()
+
         self.num_sheets = num_sheets
         self.out_nc = out_nc
         self.hidden = nn.Linear(in_nc, nc)

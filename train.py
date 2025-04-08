@@ -6,7 +6,7 @@ from torch import nn, optim
 import argparse
 from torch.utils.data import DataLoader
 from data.noisedata import NoiseData
-from model.nonlinear import NonLinear, NonLinearType, NonLinearTypeModel
+from model.nonlinear import NonLinear, NonLinearType, NonLinearTypeModel, NonLinearBowlMode
 from utils.transform import Normalizer
 from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument('--data_dir', dest='data_dir', help='Directory path for data.',
           default='../data', type=str)
     parser.add_argument('--filename', dest='filename', help='data filename.',
-          default='data_final_train.xlsx', type=str)
+          default='data_final_train_0318.xlsx', type=str)
     parser.add_argument('--output_string', dest='output_string', help='String appended to output snapshots.', default = '', type=str)
     parser.add_argument('--dataset', dest='dataset', help='Dataset type.', default='NoiseData', type=str)
     parser.add_argument('--log_dir', dest='log_dir', type = str, default = 'logs/train')
@@ -42,17 +42,17 @@ if __name__ == '__main__':
     
     num_epochs = args.num_epochs
     batch_size = args.batch_size
-    transformations = Normalizer(mean=[354.16, 32.17, 2649.37], std=[187.5, 647.17, 2045.62])
+    transformations = Normalizer(mean=[363.80, 46.21, 2457.96, 149.38, 67.70, 7.65], std=[125.97, 199.17, 941.75, 5.73, 6.91, 0.10])
 
     if args.dataset == 'NoiseData':
-        dataset = NoiseData(dir=args.data_dir, filename=args.filename, transform=transformations, use_type=True)
+        dataset = NoiseData(dir=args.data_dir, filename=args.filename, transform=transformations, use_type=None, use_bowl=True)
 
     train_loader = DataLoader(dataset=dataset,
                             batch_size=batch_size,
                             shuffle=True,
                             num_workers=2)
     
-    model = NonLinearTypeModel(nc=args.nc).to(device)
+    model = NonLinearBowlMode(nc=args.nc).to(device)
     criterion = nn.MSELoss().to(device)
 
     optimizer = optim.SGD(model.parameters(), lr=args.lr)
@@ -63,10 +63,10 @@ if __name__ == '__main__':
     Loss_writer = SummaryWriter(log_dir = args.log_dir)
 
     for epoch in range(args.num_epochs):
-        for i, (inputs, outputs, types, sheet_idx) in tqdm(enumerate(train_loader)):
+        for i, (inputs, outputs, bowl, sheet_idx) in tqdm(enumerate(train_loader)):
             inputs = inputs.to(device)
             labels = outputs.to(device)
-            types = types.long().to(device)
+            bowl = bowl.long().to(device)
             sheet_idx = sheet_idx.to(device)
             
             optimizer.zero_grad()
@@ -74,8 +74,8 @@ if __name__ == '__main__':
             
             batch_indices = torch.arange(preds.size(0), device=device)
             preds = preds[batch_indices, sheet_idx.squeeze(), :]
-            types = types.view(-1, 1)
-            preds = preds.gather(1, types)
+            bowl = bowl.view(-1, 1)
+            preds = preds.gather(1, bowl)
            
             loss = criterion(preds, labels)
             loss.backward()
@@ -88,7 +88,7 @@ if __name__ == '__main__':
             # Save models at numbered epochs.
 
         scheduler.step()
-        if epoch % 100 == 0 and epoch < num_epochs:
+        if epoch % 100 == 0 or epoch == 495:
             print('Taking snapshot...')
             if not os.path.exists('snapshots/'):
                 os.makedirs('snapshots/')

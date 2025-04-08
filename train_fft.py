@@ -6,7 +6,7 @@ from torch import nn, optim
 import argparse
 from torch.utils.data import DataLoader
 from data.noisedata import NoiseData, NoiseDataFFT
-from model.nonlinear import NonLinear, NonLinearType, NonLinearTypeBin, NonLinearTypeBinModel
+from model.nonlinear import NonLinear, NonLinearType, NonLinearTypeBin, NonLinearTypeBinModel, NonLinearBinModel, NonLinearBowlBinMode
 from utils.transform import Normalizer
 from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
@@ -38,20 +38,23 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f'Using device: {device}')
+    
     num_epochs = args.num_epochs
     batch_size = args.batch_size
-    transformations = Normalizer(mean=[354.16, 32.17, 2649.37], std=[187.5, 647.17, 2045.62])
+    transformations = Normalizer(mean=[363.80, 46.21, 2457.96, 149.38, 67.70, 7.65], std=[125.97, 199.17, 941.75, 5.73, 6.91, 0.10])
 
     if args.dataset == 'NoiseData':
-        dataset = NoiseDataFFT(dir=args.data_dir, filename=args.filename, transform=transformations, use_type=True, fft_out=26)
+        dataset = NoiseDataFFT(dir=args.data_dir, filename=args.filename, transform=transformations, use_bowl=True, fft_out=26)
 
     train_loader = DataLoader(dataset=dataset,
                             batch_size=batch_size,
                             shuffle=True,
                             num_workers=2)
     
-
-    model = NonLinearTypeBinModel(nc = args.nc, out_nc=18, num_bins=25, num_sheets=4)
+    model = NonLinearBowlBinMode(nc=args.nc, out_nc=2, num_bins=26, num_sheets=4).to(device)
     if args.snapshot != '':
         saved_state_dict = torch.load(args.snapshot, weights_only=True)
         model.load_state_dict({name: weight for name, weight in saved_state_dict.items() if name.startswith('hidden')}, strict=False)
@@ -67,19 +70,20 @@ if __name__ == '__main__':
     Loss_writer = SummaryWriter(log_dir = args.log_dir)
 
     for epoch in range(args.num_epochs):
-        for i, (inputs, outputs, types, sheet_idx) in tqdm(enumerate(train_loader)):
-            inputs = Variable(inputs)
-            labels = Variable(outputs)
+        for i, (inputs, outputs, bowls, sheet_idx) in tqdm(enumerate(train_loader)):
+            inputs = Variable(inputs).to(device)
+            labels = Variable(outputs).to(device)
+            bowls = bowls.to(device)
             optimizer.zero_grad()
             preds = model(inputs)
-            batch_indices = torch.arange(preds.size(0))
-            preds = preds[batch_indices, sheet_idx.squeeze(), :, :]
-            types = types.view(-1, 1, 1)
-            preds = preds.gather(1, types.expand(-1, 1, preds.size(2)))
+            batch_indices = torch.arange(preds.size(0), device=device)
+            preds = preds[batch_indices, sheet_idx.squeeze().to(device), :]
+            bowls = bowls.view(-1, 1, 1)
+            preds = preds.gather(1, bowls.expand(-1, 1, preds.size(2)))
             preds = preds.squeeze(1)
 
             # calculate loss
-            loss_flag = torch.ones(inputs.size(0))
+            loss_flag = torch.ones(inputs.size(0), device=device)
             cos_loss = cos_criterion(preds, labels, loss_flag)
             mse_loss = criterion(preds, labels)
             loss = cos_loss + mse_loss
@@ -93,7 +97,7 @@ if __name__ == '__main__':
             # Save models at numbered epochs.
 
         scheduler.step()
-        if epoch % 100 == 0 and epoch < num_epochs:
+        if epoch % 100 == 0 or epoch == 495:
             print('Taking snapshot...')
             if not os.path.exists('snapshots/'):
                 os.makedirs('snapshots/')
